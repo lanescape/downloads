@@ -29,6 +29,14 @@ jobs:
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
+      # The race detector needs cgo, so a C compiler: the runner service's
+      # image gains one with lanescape/runners#37; until then, install it.
+      - name: Install a C compiler if there's none
+        run: |
+          if ! command -v gcc >/dev/null; then
+            sudo DEBIAN_FRONTEND=noninteractive apt-get update -q
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends gcc libc6-dev
+          fi
       - name: go vet
         run: go vet ./...
       - name: gofmt
@@ -40,6 +48,8 @@ jobs:
             exit 1
           fi
       - name: go test
+        env:
+          CGO_ENABLED: "1"
         run: go test -race ./...
       - name: actionlint
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
