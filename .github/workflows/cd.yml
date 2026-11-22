@@ -168,7 +168,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash cd/apply.sh
       - name: Smoke check
-        if: steps.apply.outputs.deployed == 'true'
+        # Also after an apply whose logs alone couldn't be read, which fails
+        # the job but deployed.
+        if: ${{ !cancelled() && steps.apply.outputs.deployed == 'true' }}
         env:
           SERVICE_URL: ${{ vars.DOWNLOADS_SERVICE_URL }}
         run: go run ./cmd/downloads -smoke-check "$SERVICE_URL"

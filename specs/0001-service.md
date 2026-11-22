@@ -11,7 +11,7 @@ A download's address is `https://downloads.lanescape.dev/<group>/<key>`, such as
 ## Requests
 
 - `GET` or `HEAD` of `/<group>/<key>` is answered `307 Temporary Redirect`, with `Location` a URL of the object at the group's provider that is good for the configuration's `url_lifetime`, signed for that method alone. The client follows it to the provider, which answers as it does for any object: the object, or `404` if there's none.
-- The key's segments are letters, digits, `.`, `_` and `-`, and none is `.` or `..`. Anything escaped in the path, and an empty segment, is refused. The query is ignored.
+- The key's segments are letters, digits, `.`, `_` and `-`, and none is `.` or `..`. Anything escaped in the path, and an empty segment, is refused. The query is ignored. These hold for requests as they reach the service: Cloud Run's front end may decode some escapes first, and answers some methods, such as `TRACE` and `CONNECT`, itself.
 - Every other method is `405`, with `Allow: GET, HEAD`, `OPTIONS *` too. A path in no group, or a key that isn't allowed, is `404`.
 - Every answer is `Cache-Control: no-store`: a path such as `v1/latest` changes, and a redirect is only as good as its URL's signature.
 - The service doesn't check that the object exists, which would cost a request to the provider for every download; the provider says so itself.

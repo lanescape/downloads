@@ -105,6 +105,40 @@ func TestSmokeFails(t *testing.T) {
 			t.Errorf("%q: err = %v", location, err)
 		}
 	}
+	// An escaped separator isn't the path, and an answer that isn't R2's
+	// NoSuchKey, or that reflects the signature, fails without repeating it.
+	answers := 0
+	fakeR2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		answers++
+		switch r.URL.Query().Get("case") {
+		case "comment":
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte("<html><!-- <Code>NoSuchKey</Code> --></html>"))
+		case "reflect":
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte("<Error><Code>" + r.URL.Query().Get("X-Amz-Signature") + "</Code></Error>"))
+		}
+	}))
+	defer fakeR2.Close()
+	for _, tc := range []struct{ location, want string }{
+		{fakeR2.URL + "/bucket-one%2Fsmoke-check/absent?X-Amz-Signature=SIGNED", "isn't to smoke-check/absent"},
+		{fakeR2.URL + "/bucket-one/smoke-check/absent?case=comment&X-Amz-Signature=SIGNED", "404, no S3 error"},
+		{fakeR2.URL + "/bucket-one/smoke-check/absent?case=reflect&X-Amz-Signature=SIGNED-x%3C%2FCode%3E", "403, no S3 error"},
+	} {
+		redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Location", tc.location)
+			w.WriteHeader(http.StatusTemporaryRedirect)
+		}))
+		before := answers
+		err := smoke(context.Background(), c, redirect.URL, http.DefaultTransport, io.Discard, emulator(fakeR2.URL))
+		redirect.Close()
+		if err == nil || !strings.Contains(err.Error(), tc.want) || strings.Contains(err.Error(), "SIGNED") {
+			t.Errorf("%s: err = %v", tc.location, err)
+		}
+		if strings.Contains(tc.want, "isn't to") && answers != before {
+			t.Errorf("%s: fetched a redirect that wasn't to the object", tc.location)
+		}
+	}
 	// No redirect at all.
 	plain := httptest.NewServer(http.NotFoundHandler())
 	defer plain.Close()

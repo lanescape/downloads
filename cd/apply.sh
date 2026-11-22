@@ -7,7 +7,8 @@
 # does: the preview, the apply, a deployment that isn't ACTIVE or a latest
 # revision that isn't APPLIED, or logs that can't be read. Only once the
 # apply has succeeded does it give the step's output deployed=true, which
-# cd.yml's smoke check needs; a deploy it skips gives none. apply_test.go
+# cd.yml's smoke check needs, even if the logs then can't be read; a deploy
+# it skips or that fails gives none. apply_test.go
 # runs it against stand-ins for gcloud and curl.
 #
 # It takes, from the environment: PROJECT, REGION, DEPLOYMENT,
@@ -182,8 +183,10 @@ if [ "$apply_ok" != true ]; then
   echo "::error title=Apply failed::Infrastructure Manager's apply of infra/ failed: see its logs above."
   exit 1
 fi
+# Applied: said before any failure to read the logs, so the smoke check
+# still runs against what was deployed, while the job still fails.
+echo "deployed=true" >>"$GITHUB_OUTPUT"
 if [ "$logs_failed" = true ]; then
   echo "::error title=Logs unread::infra/ was applied, but its logs couldn't all be read."
   exit 1
 fi
-echo "deployed=true" >>"$GITHUB_OUTPUT"

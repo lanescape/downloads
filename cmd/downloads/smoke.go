@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -46,7 +48,8 @@ func smoke(ctx context.Context, c *config.Config, base string, transport http.Ro
 			return fmt.Errorf("smoke check: %s: the provider's endpoint", g.Path)
 		}
 		l, err := url.Parse(location)
-		if err != nil || l.Scheme != want.Scheme || l.Host != want.Host || l.Path != "/"+g.R2.Bucket+"/"+smokeKey {
+		// The path as sent, so an escaped separator doesn't pass for one.
+		if err != nil || l.Scheme != want.Scheme || l.Host != want.Host || l.EscapedPath() != "/"+g.R2.Bucket+"/"+smokeKey {
 			return fmt.Errorf("smoke check: %s: the redirect isn't to %s in bucket %s", g.Path, smokeKey, g.R2.Bucket)
 		}
 		status, _, body, err := get(ctx, transport, location)
@@ -54,8 +57,8 @@ func smoke(ctx context.Context, c *config.Config, base string, transport http.Ro
 			// The error would hold the signed URL; say only what failed.
 			return fmt.Errorf("smoke check: %s: couldn't fetch the redirect's URL", g.Path)
 		}
-		if status != http.StatusNotFound || !strings.Contains(body, "<Code>NoSuchKey</Code>") {
-			return fmt.Errorf("smoke check: %s: R2 answered %d, %s, not 404 NoSuchKey: is the token's secret right, and may it read the bucket?", g.Path, status, code(body))
+		if c := s3Code(body); status != http.StatusNotFound || c != "NoSuchKey" {
+			return fmt.Errorf("smoke check: %s: R2 answered %d, %s, not 404 NoSuchKey: is the token's secret right, and may it read the bucket?", g.Path, status, c)
 		}
 		fmt.Fprintf(out, "%s: redirected, and R2 accepted the signature\n", g.Path)
 	}
@@ -80,19 +83,24 @@ func get(ctx context.Context, transport http.RoundTripper, target string) (int, 
 		return 0, "", "", err
 	}
 	defer resp.Body.Close()
-	b, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if err != nil {
+		return 0, "", "", err
+	}
 	return resp.StatusCode, resp.Header.Get("Location"), string(b), nil
 }
 
-// code is an S3 error's code, or "no error code".
-func code(body string) string {
-	_, rest, ok := strings.Cut(body, "<Code>")
-	if !ok {
-		return "no error code"
+// s3Code is an S3 error document's code, or "no S3 error" if the body isn't
+// one, or its code isn't a plain word, which is never repeated.
+func s3Code(body string) string {
+	var e struct {
+		XMLName xml.Name `xml:"Error"`
+		Code    string   `xml:"Code"`
 	}
-	c, _, _ := strings.Cut(rest, "</Code>")
-	if len(c) > 64 {
-		c = c[:64]
+	if xml.Unmarshal([]byte(body), &e) != nil || !s3CodeWord.MatchString(e.Code) {
+		return "no S3 error"
 	}
-	return c
+	return e.Code
 }
+
+var s3CodeWord = regexp.MustCompile(`^[A-Za-z]{1,64}$`)

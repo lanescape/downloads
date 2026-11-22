@@ -237,9 +237,12 @@ func TestEveryFailureFailsTheDeploy(t *testing.T) {
 			if !strings.Contains(r.out, tc.want) {
 				t.Fatalf("output doesn't say %q:\n%s", tc.want, r.out)
 			}
-			// A failed deploy never says it deployed.
-			if strings.Contains(r.output, "deployed") {
-				t.Fatalf("a failed deploy gave %q", r.output)
+			// A failed deploy never says it deployed; one whose logs
+			// alone couldn't be read did deploy, and says so, so that
+			// its smoke check still runs.
+			logsOnly := tc.want == "Couldn't list" || tc.want == "Couldn't read" || tc.want == "Couldn't find the preview's logs"
+			if got := strings.Contains(r.output, "deployed=true"); got != logsOnly {
+				t.Fatalf("%s gave %q", tc.env, r.output)
 			}
 		})
 	}
