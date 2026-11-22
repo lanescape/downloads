@@ -80,6 +80,7 @@ func TestRefused(t *testing.T) {
 	for _, tc := range []struct{ name, yaml, want string }{
 		{"empty", "", "empty"},
 		{"no groups", "url_lifetime: 1h\n", "no groups"},
+		{"a second document", "groups:" + group("a", "bucket-one", "lanescape-downloads-a") + "---\ngroups:" + group("b", "bucket-two", "lanescape-downloads-b"), "more than one"},
 		{"unknown field", "groups:" + group("a", "bucket-one", "lanescape-downloads-a") + "other: 1\n", "other"},
 		{"unknown provider field", strings.Replace("groups:"+group("a", "bucket-one", "lanescape-downloads-a"), "bucket:", "region: x\n      bucket:", 1), "region"},
 		// A field holding a secret's value would be refused for its name.

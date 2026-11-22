@@ -117,6 +117,11 @@ func Parse(data []byte) (*Config, error) {
 		}
 		return nil, fmt.Errorf("config: %w", err)
 	}
+	// One document: a group after a "---" would otherwise be left out.
+	var more any
+	if err := dec.Decode(&more); !errors.Is(err, io.EOF) {
+		return nil, errors.New("config: more than one YAML document")
+	}
 	c := &Config{URLLifetime: DefaultURLLifetime}
 	if f.URLLifetime != nil {
 		d, err := time.ParseDuration(*f.URLLifetime)

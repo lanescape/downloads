@@ -77,7 +77,7 @@ func TestAWSPresignedExample(t *testing.T) {
 	if err := check(t, r, exampleTime.Add(86400*time.Second)); err != nil {
 		t.Fatalf("at its expiry: %v", err)
 	}
-	if err := check(t, r, exampleTime.Add(86401*time.Second)); err == nil || err.message != "Request has expired" {
+	if err := check(t, r, exampleTime.Add(86401*time.Second)); err == nil || err.status != 403 || err.code != "ExpiredRequest" {
 		t.Fatalf("after its expiry: %v", err)
 	}
 	// Another method, or another object, isn't what was signed.

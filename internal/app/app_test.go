@@ -170,7 +170,7 @@ func TestExpired(t *testing.T) {
 	// The configuration's lifetime, 10 minutes, then a second.
 	w.now = w.now.Add(10*time.Minute + time.Second)
 	resp, b := fetch(t, "GET", location)
-	if resp.StatusCode != 403 || !strings.Contains(string(b), "expired") {
+	if resp.StatusCode != 403 || !strings.Contains(string(b), "<Code>ExpiredRequest</Code>") {
 		t.Fatalf("%d %s", resp.StatusCode, b)
 	}
 }

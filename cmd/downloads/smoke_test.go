@@ -84,7 +84,7 @@ func TestSmokeFails(t *testing.T) {
 	// A redirect to another host than the group's account's.
 	c, base, _ = smokeWorld(t, "secret")
 	err = smoke(context.Background(), c, base, http.DefaultTransport, io.Discard, r2Endpoint)
-	if err == nil || !strings.Contains(err.Error(), "isn't to smoke-check/absent in bucket bucket-one") {
+	if err == nil || !strings.Contains(err.Error(), "in bucket bucket-one") || !strings.Contains(err.Error(), "isn't to smoke-check/") {
 		t.Fatalf("err = %v", err)
 	}
 	// A redirect to another object, or one whose Location can't be parsed,
@@ -121,12 +121,16 @@ func TestSmokeFails(t *testing.T) {
 	}))
 	defer fakeR2.Close()
 	for _, tc := range []struct{ location, want string }{
-		{fakeR2.URL + "/bucket-one%2Fsmoke-check/absent?X-Amz-Signature=SIGNED", "isn't to smoke-check/absent"},
-		{fakeR2.URL + "/bucket-one/smoke-check/absent?case=comment&X-Amz-Signature=SIGNED", "404, no S3 error"},
-		{fakeR2.URL + "/bucket-one/smoke-check/absent?case=reflect&X-Amz-Signature=SIGNED-x%3C%2FCode%3E", "403, no S3 error"},
+		{fakeR2.URL + "/bucket-one%2FKEY?X-Amz-Signature=SIGNED", "isn't to smoke-check/"},
+		{fakeR2.URL + "/bucket-one/smoke-check/other?X-Amz-Signature=SIGNED", "isn't to smoke-check/"},
+		{fakeR2.URL + "/bucket-one/KEY?case=comment&X-Amz-Signature=SIGNED", "404, no S3 error"},
+		{fakeR2.URL + "/bucket-one/KEY?case=reflect&X-Amz-Signature=SIGNED-x%3C%2FCode%3E", "403, no S3 error"},
+		{fakeR2.URL + "/bucket-one/KEY?case=reflect&X-Amz-Signature=SIGNEDLETTERSONLY", "403, an unrecognized code"},
 	} {
 		redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Location", tc.location)
+			// The redirect is for the key the check asked for, from its path.
+			key := strings.TrimPrefix(r.URL.Path, "/lanescape/browser/")
+			w.Header().Set("Location", strings.ReplaceAll(tc.location, "KEY", key))
 			w.WriteHeader(http.StatusTemporaryRedirect)
 		}))
 		before := answers
@@ -147,5 +151,27 @@ func TestSmokeFails(t *testing.T) {
 	}
 	if err := smoke(context.Background(), c, "ftp://x", http.DefaultTransport, io.Discard, emulator(plain.URL)); err == nil {
 		t.Fatal("accepted ftp")
+	}
+}
+
+func TestS3Code(t *testing.T) {
+	for body, want := range map[string]string{
+		"<Error><Code>NoSuchKey</Code><Message>x</Message></Error>":                 "NoSuchKey",
+		"<?xml version=\"1.0\"?>\n<Error><Code>AccessDenied</Code></Error>\n":       "AccessDenied",
+		"<Error><Code>AccessDenied</Code><Code>NoSuchKey</Code></Error>":            "no S3 error",
+		"<Error><Code>NoSuchKey</Code></Error><html/>":                              "no S3 error",
+		"<Error><Code>NoSuchKey</Code></Error>trailing":                             "no S3 error",
+		"<Other><Code>NoSuchKey</Code></Other>":                                     "no S3 error",
+		"<Error><Code>NoSuch<b/>Key</Code></Error>":                                 "no S3 error",
+		"<Error><Code>SIGNATUREINLETTERS</Code></Error>":                            "an unrecognized code",
+		"<Error><Code>NoSuchKey</Code></Error>" + strings.Repeat(" ", maxErrorBody): "no S3 error",
+		"": "no S3 error",
+	} {
+		if got := s3Code(body); got != want {
+			t.Errorf("s3Code(%.60q) = %q, want %q", body, got, want)
+		}
+	}
+	if a, b := smokeKey(), smokeKey(); a == b || !strings.HasPrefix(a, "smoke-check/") {
+		t.Errorf("smoke keys %q %q", a, b)
 	}
 }

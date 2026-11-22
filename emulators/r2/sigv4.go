@@ -163,7 +163,7 @@ func (s *signed) verify(r *http.Request, secret string, now time.Time) *authErro
 	}
 	if s.presigned {
 		if now.After(s.date.Add(time.Duration(s.expires) * time.Second)) {
-			return refuse(http.StatusForbidden, "AccessDenied", "Request has expired")
+			return refuse(http.StatusForbidden, "ExpiredRequest", "Request has expired")
 		}
 		if s.date.After(now.Add(maxSkew)) {
 			return refuse(http.StatusForbidden, "AccessDenied", "Request is not yet valid")
