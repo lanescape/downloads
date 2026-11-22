@@ -42,17 +42,9 @@ esac
 `
 
 // curl stands in for curl: it records its arguments and its configuration
-// on standard input, and answers as Infrastructure Manager would, or, for
-// main's head, as GitHub would: HEAD_SHA.
+// on standard input, and answers as Infrastructure Manager would.
 const curl = `#!/bin/bash
 config=$(cat)
-case "$*" in
-  *"https://api.github.com/repos/lanescape/downloads/commits/main"*)
-    echo "github $*" >>"$CALLS"
-    echo "github-config $config" >>"$GITHUB_CONFIGS"
-    [ "$GH_FAIL" = 1 ] && exit 22
-    echo "{\"sha\":\"$HEAD_SHA\"}"; exit 0 ;;
-esac
 echo "curl $*" >>"$CALLS"
 echo "config $config" >>"$CALLS"
 case "$*" in
@@ -61,6 +53,16 @@ case "$*" in
     else echo '{"name":"op","done":true}'; fi ;;
   *) [ "$CALL_FAIL" = 1 ] && { echo '{"error":{"message":"denied"}}'; exit 22; }
      echo '{"name":"op","done":false}' ;;
+esac
+`
+
+// gh stands in for GitHub's CLI: main's head is HEAD_SHA. The token
+// reaches it only in its environment, as GH_TOKEN.
+const gh = `#!/bin/bash
+echo "gh $*" >>"$CALLS"
+case "$*" in
+  "api repos/lanescape/downloads/commits/main --jq .sha") [ "$GH_FAIL" = 1 ] && exit 1; echo "$HEAD_SHA" ;;
+  *) echo "unexpected: gh $*" >&2; exit 2 ;;
 esac
 `
 
@@ -90,9 +92,6 @@ type result struct {
 	summary string
 	// output is what the step gives as its outputs.
 	output string
-	// githubConfig is what curl was given on its standard input for
-	// GitHub's API.
-	githubConfig string
 }
 
 func apply(t *testing.T, env ...string) result {
@@ -107,7 +106,7 @@ func apply(t *testing.T, env ...string) result {
 	if err := os.Mkdir(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for name, body := range map[string]string{"gcloud": gcloud, "curl": curl, "sleep": "#!/bin/sh\nexit 0\n"} {
+	for name, body := range map[string]string{"gcloud": gcloud, "curl": curl, "gh": gh, "sleep": "#!/bin/sh\nexit 0\n"} {
 		if err := os.WriteFile(filepath.Join(bin, name), []byte(body), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -118,7 +117,7 @@ func apply(t *testing.T, env ...string) result {
 	calls, summary, output := filepath.Join(dir, "calls"), filepath.Join(dir, "summary"), filepath.Join(dir, "output")
 	cmd := exec.Command(sh, "apply.sh")
 	cmd.Env = append([]string{
-		"PATH=" + bin + ":/usr/bin:/bin", "CALLS=" + calls, "GITHUB_CONFIGS=" + filepath.Join(dir, "github-configs"), "GITHUB_STEP_SUMMARY=" + summary, "GITHUB_OUTPUT=" + output,
+		"PATH=" + bin + ":/usr/bin:/bin", "CALLS=" + calls, "GITHUB_STEP_SUMMARY=" + summary, "GITHUB_OUTPUT=" + output,
 		"GITHUB_SHA=0123456789abcdef0123456789abcdef01234567", "GITHUB_RUN_ID=111", "GITHUB_RUN_ATTEMPT=2",
 		"GITHUB_REPOSITORY=lanescape/downloads", "GH_TOKEN=GH-SECRET",
 		"HEAD_SHA=0123456789abcdef0123456789abcdef01234567",
@@ -132,8 +131,7 @@ func apply(t *testing.T, env ...string) result {
 	c, _ := os.ReadFile(calls)
 	s, _ := os.ReadFile(summary)
 	o, _ := os.ReadFile(output)
-	g, _ := os.ReadFile(filepath.Join(dir, "github-configs"))
-	return result{err: err, out: string(out), calls: string(c), summary: string(s), output: string(o), githubConfig: string(g)}
+	return result{err: err, out: string(out), calls: string(c), summary: string(s), output: string(o)}
 }
 
 func TestAFirstApplyCreatesTheDeployment(t *testing.T) {
@@ -262,7 +260,7 @@ func TestAnAttemptOfACommitNoLongerMainsHeadAppliesNothing(t *testing.T) {
 	if r.err != nil {
 		t.Fatalf("a skipped deploy failed: %v\n%s", r.err, r.out)
 	}
-	if strings.Contains(r.calls, "gcloud") || strings.Contains(r.calls, "curl ") {
+	if strings.Contains(r.calls, "gcloud") || strings.Contains(r.calls, "curl") {
 		t.Fatalf("a commit no longer main's head was previewed or applied:\n%s", r.calls)
 	}
 	if !strings.Contains(r.out, "main has moved on to fedcba9876543210fedcba9876543210fedcba98") {
@@ -278,9 +276,5 @@ func TestAnAttemptOfACommitNoLongerMainsHeadAppliesNothing(t *testing.T) {
 	}
 	if strings.Contains(r.out, "GH-SECRET") || strings.Contains(r.calls, "GH-SECRET") {
 		t.Fatal("GitHub's token was printed or passed as an argument")
-	}
-	// It reached curl only as its configuration.
-	if !strings.Contains(r.githubConfig, `header = "Authorization: Bearer GH-SECRET"`) {
-		t.Fatalf("GitHub's token didn't reach curl's configuration: %q", r.githubConfig)
 	}
 }

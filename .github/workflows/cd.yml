@@ -90,10 +90,7 @@ jobs:
           fi
           # An older commit never deploys over a newer one: main's head has
           # a run of its own, waiting behind this one, which deploys it.
-          # curl and jq, which the runner service's machines have; not gh.
-          head=$(printf 'header = "Authorization: Bearer %s"\n' "$GH_TOKEN" |
-            curl -fsS -K - -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/main" |
-            jq -er .sha)
+          head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
           if [ "$head" != "$GITHUB_SHA" ]; then
             skip "main has moved on to $head since $GITHUB_SHA; the run for a later push deploys it."
           fi
