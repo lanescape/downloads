@@ -1,0 +1,84 @@
+name: CI
+
+# On pull requests, and from cd.yml, as its checks before it deploys
+# (specs/0002-deployment.md, CI and CD).
+on:
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+# A pull request's newer push cancels its older checks. Called from cd.yml,
+# each run's checks are its own.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go
+    # The organization's own pull requests, and its pushes to main through
+    # cd.yml, run on the runner service. A fork's pull request runs on
+    # GitHub's runners, since nothing in CI needs anything of ours.
+    runs-on: ${{ github.repository_owner_id == '303994381' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'lanescape-2vcpu-linux-amd64' || 'ubuntu-26.04' }}
+    timeout-minutes: 15
+    steps:
+      - uses: lanescape/runners/actions/checkout@v1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - name: go vet
+        run: go vet ./...
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "These files aren't formatted with gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: go test
+        run: go test -race ./...
+      - name: actionlint
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+
+  terraform:
+    name: Terraform
+    runs-on: ${{ github.repository_owner_id == '303994381' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'lanescape-2vcpu-linux-amd64' || 'ubuntu-26.04' }}
+    timeout-minutes: 15
+    steps:
+      - uses: lanescape/runners/actions/checkout@v1
+      - name: Install Terraform
+        # The latest release, and 1.5.7, which Infrastructure Manager
+        # applies infra/ with. Checksums from HashiCorp's signed SHA256SUMS.
+        run: |
+          set -euo pipefail
+          install() {
+            local version=$1 sha256=$2 dir="$RUNNER_TEMP/terraform-$1"
+            curl -fsSLo "$RUNNER_TEMP/terraform.zip" "https://releases.hashicorp.com/terraform/$version/terraform_${version}_linux_amd64.zip"
+            echo "$sha256  $RUNNER_TEMP/terraform.zip" | sha256sum -c -
+            mkdir -p "$dir"
+            unzip -q -o "$RUNNER_TEMP/terraform.zip" -d "$dir"
+            rm "$RUNNER_TEMP/terraform.zip"
+          }
+          install 1.17.1 4638628058e71a55212b1c563712eac03b902128f40740f3dc8174df12135061
+          install 1.5.7 c0ed7bc32ee52ae255af9982c8c88a7a4c610485cf1d55feeb037eab75fa082c
+      - name: Refuse what infra/ and bootstrap/ may not hold
+        run: infra/check.sh
+      - name: terraform fmt
+        run: '"$RUNNER_TEMP/terraform-1.17.1/terraform" fmt -check -diff -recursive infra bootstrap'
+      - name: terraform validate
+        run: |
+          set -euo pipefail
+          validate() {
+            local tf="$RUNNER_TEMP/terraform-$1/terraform" dir=$2
+            echo "Terraform $1, $dir/"
+            rm -rf "$dir/.terraform"
+            "$tf" -chdir="$dir" init -backend=false -input=false -lockfile=readonly
+            "$tf" -chdir="$dir" validate
+          }
+          validate 1.17.1 bootstrap
+          validate 1.17.1 infra
+          validate 1.5.7 infra

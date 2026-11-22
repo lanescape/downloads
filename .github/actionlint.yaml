@@ -1,0 +1,10 @@
+# actionlint's configuration (ci.yml). The runner service's selectors are
+# labels it doesn't know.
+self-hosted-runner:
+  labels:
+    - lanescape-2vcpu-linux-amd64
+# actionlint doesn't know concurrency's queue yet, which cd.yml uses.
+paths:
+  .github/workflows/cd.yml:
+    ignore:
+      - 'unexpected key "queue" for "concurrency" section'

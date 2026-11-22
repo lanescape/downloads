@@ -1,0 +1,19 @@
+# ko builds the service's image (specs/0002-deployment.md, CI and CD): the
+# compiled program on Debian 13 slim, for linux/amd64, Cloud Run's, on a base
+# named by digest, so that building the same commit again gives the same
+# image. The program needs nothing from the base: it makes no outgoing
+# connections, since presigning a URL is local. To move the base on, take the
+# digest of the tag's index:
+#   tok=$(curl -fsS 'https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/debian:pull' | jq -r .token)
+#   curl -fsSI -H "Authorization: Bearer $tok" -H 'Accept: application/vnd.oci.image.index.v1+json' \
+#     https://registry-1.docker.io/v2/library/debian/manifests/13-slim
+defaultBaseImage: docker.io/library/debian:13-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
+defaultPlatforms:
+  - linux/amd64
+builds:
+  - id: downloads
+    main: ./cmd/downloads
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
