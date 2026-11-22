@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -107,32 +108,34 @@ func get(ctx context.Context, transport http.RoundTripper, target string) (int, 
 // code that isn't one R2 is known to give, so nothing the provider reflects
 // is ever repeated.
 func s3Code(body string) string {
+	const none = "no S3 error"
 	if len(body) > maxErrorBody {
-		return "no S3 error"
+		return none
 	}
 	dec := xml.NewDecoder(strings.NewReader(body))
-	depth, roots, codes, inCode := 0, 0, 0, false
+	depth, codes, inCode, started := 0, 0, false, false
 	var code strings.Builder
 	for {
+		before := dec.InputOffset()
 		tok, err := dec.Token()
-		if err == io.EOF {
-			break
-		}
 		if err != nil {
-			return "no S3 error"
+			// Ending before the root closes, or not XML at all.
+			return none
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:
-			if depth == 0 {
-				roots++
-				if roots > 1 || t.Name.Local != "Error" {
-					return "no S3 error"
+			switch {
+			case depth == 0:
+				// Before the root, only an XML declaration and space.
+				if started || t.Name.Local != "Error" || !prolog.MatchString(body[:before]) {
+					return none
 				}
-			} else if depth == 1 && t.Name.Local == "Code" {
+				started = true
+			case depth == 1 && t.Name.Local == "Code":
 				codes++
 				inCode = true
-			} else if inCode {
-				return "no S3 error"
+			case inCode:
+				return none
 			}
 			depth++
 		case xml.EndElement:
@@ -140,30 +143,36 @@ func s3Code(body string) string {
 			if depth == 1 {
 				inCode = false
 			}
+			if depth == 0 {
+				// After the root, only space: no processing instruction,
+				// CDATA, comment or text.
+				if strings.Trim(body[dec.InputOffset():], " \t\r\n") != "" || codes != 1 {
+					return none
+				}
+				if c := code.String(); knownCodes[c] {
+					return c
+				}
+				return "an unrecognized code"
+			}
 		case xml.CharData:
 			if inCode {
 				code.Write(t)
-			} else if depth == 0 && strings.TrimSpace(string(t)) != "" {
-				return "no S3 error"
 			}
-		case xml.Comment, xml.Directive:
-			if depth == 0 || inCode {
-				return "no S3 error"
+		case xml.ProcInst, xml.Comment, xml.Directive:
+			// Nothing may split a code's text.
+			if inCode {
+				return none
 			}
 		}
 	}
-	if roots != 1 || codes != 1 {
-		return "no S3 error"
-	}
-	if c := code.String(); knownCodes[c] {
-		return c
-	}
-	return "an unrecognized code"
 }
+
+// prolog is what may come before an S3 error document's root.
+var prolog = regexp.MustCompile(`^[ \t\r\n]*(<\?xml[ \t][^?]*\?>)?[ \t\r\n]*$`)
 
 // knownCodes are the S3 errors R2 gives that the smoke check may name.
 var knownCodes = map[string]bool{
 	"NoSuchKey": true, "NoSuchBucket": true, "AccessDenied": true, "SignatureDoesNotMatch": true,
-	"InvalidAccessKeyId": true, "ExpiredRequest": true, "RequestTimeTooSkewed": true, "InvalidArgument": true,
+	"InvalidAccessKeyId": true, "Unauthorized": true, "ExpiredRequest": true, "RequestTimeTooSkewed": true, "InvalidArgument": true,
 	"AuthorizationQueryParametersError": true, "InternalError": true, "ServiceUnavailable": true,
 }

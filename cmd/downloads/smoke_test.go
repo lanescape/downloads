@@ -166,6 +166,12 @@ func TestS3Code(t *testing.T) {
 		"<Error><Code>SIGNATUREINLETTERS</Code></Error>":                            "an unrecognized code",
 		"<Error><Code>NoSuchKey</Code></Error>" + strings.Repeat(" ", maxErrorBody): "no S3 error",
 		"": "no S3 error",
+		"<Error><Code>NoSuchKey</Code></Error><?pi x?>":      "no S3 error",
+		"<Error><Code>NoSuch<?pi x?>Key</Code></Error>":      "no S3 error",
+		"<Error><Code>NoSuchKey</Code></Error><![CDATA[ ]]>": "no S3 error",
+		"<!-- x --><Error><Code>NoSuchKey</Code></Error>":    "no S3 error",
+		"<Error><Code>NoSuchKey</Code>":                      "no S3 error",
+		"<Error><Code>Unauthorized</Code></Error>":           "Unauthorized",
 	} {
 		if got := s3Code(body); got != want {
 			t.Errorf("s3Code(%.60q) = %q, want %q", body, got, want)
