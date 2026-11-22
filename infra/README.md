@@ -23,7 +23,7 @@ gcloud infra-manager deployments apply \
   --input-values="^;^service_image=<image>@sha256:<digest>;deploy_id=<run ID>-<attempt>;secret_names=<names, comma-separated>"
 ```
 
-`secret_names` is what `go run ./cmd/downloads -secret-names` prints: the configuration's secrets' names, exactly as it writes them. `deploy_id` makes every apply a new revision, so a rerun of a deploy whose revision couldn't start tries again. Terraform here must work with 1.5.7, Infrastructure Manager's newest; CI validates it with that and the latest.
+`secret_names` is what `go run ./cmd/downloads -secret-names` prints: the configuration's secrets' names, exactly as it writes them. `deploy_id` makes every apply a new revision, so a rerun of a deploy whose revision couldn't start tries again. Terraform here must work with 1.5.7, the version CD pins; CI validates it with that and the latest.
 
 ## Adding the secrets' values
 
@@ -37,7 +37,7 @@ unset value
 
 Then rerun the failed CD run's deploy. An instance reads the secrets' latest versions as it starts.
 
-To replace a token, make the new one in Cloudflare, add both of its values as above, then rerun the latest CD run's deploy, which starts a new revision whose every instance has the new pair. An instance that started between the two `versions add` may hold one value of each token until then, and its redirects fail. Revoke the old token only once the new revision serves and the URLs signed with the old one have expired, `url_lifetime` after it.
+To replace a token, make the new one in Cloudflare, add both of its values as above, wait a few minutes, since Secret Manager's `latest` is only eventually consistent, then rerun the latest CD run's deploy, whose smoke check confirms R2 accepts the pair, which starts a new revision whose every instance has the new pair. An instance that started between the two `versions add` may hold one value of each token until then, and its redirects fail. Revoke the old token only once the new revision serves and the URLs signed with the old one have expired, `url_lifetime` after it.
 
 ## What the service is given
 

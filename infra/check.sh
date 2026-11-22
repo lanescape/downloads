@@ -31,6 +31,13 @@ if found=$(find infra bootstrap -name '*.tf.json' -o -name '*.tfvars.json' -o -n
   failed=1
 fi
 
+# Only Google's provider, from HashiCorp's registry.
+if found=$(grep -rEn --include='*.tf' -e '^[[:space:]]*source[[:space:]]*=' infra bootstrap | grep -v '"hashicorp/google"'); then
+  echo "infra/ and bootstrap/ may use only the hashicorp/google provider:"
+  echo "$found"
+  failed=1
+fi
+
 # Accounts, project-level grants, role definitions, log sinks and the
 # domain mapping are bootstrap/'s, so a merged change can't widen any
 # account's access or move the domain.

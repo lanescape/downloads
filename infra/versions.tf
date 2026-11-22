@@ -1,5 +1,5 @@
 terraform {
-  # Infrastructure Manager's newest Terraform; CD pins it with
+  # The Terraform CD has Infrastructure Manager use, pinned with
   # --tf-version-constraint. No backend: Infrastructure Manager keeps the
   # state.
   required_version = ">= 1.5.7"

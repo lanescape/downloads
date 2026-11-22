@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,7 +19,7 @@ import (
 )
 
 // The smoke check against the service and the R2 emulator.
-func smokeWorld(t *testing.T, secret string) (*config.Config, string) {
+func smokeWorld(t *testing.T, secret string) (*config.Config, string, string) {
 	t.Helper()
 	emu := r2emu.New()
 	emu.AddBucket("bucket-one")
@@ -53,15 +52,19 @@ groups:
 	}
 	s := httptest.NewServer(h)
 	t.Cleanup(s.Close)
-	return c, s.URL
+	return c, s.URL, es.URL
 }
 
-func anyHost(*url.URL) bool { return true }
+// emulator is the provider's endpoint in these tests: where the service
+// redirects to.
+func emulator(base string) func(config.Group) string {
+	return func(config.Group) string { return base }
+}
 
 func TestSmoke(t *testing.T) {
-	c, base := smokeWorld(t, "secret")
+	c, base, emu := smokeWorld(t, "secret")
 	var out bytes.Buffer
-	if err := smoke(context.Background(), c, base, &http.Client{}, &out, anyHost); err != nil {
+	if err := smoke(context.Background(), c, base, http.DefaultTransport, &out, emulator(emu)); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "lanescape/browser: redirected, and R2 accepted the signature") {
@@ -73,38 +76,42 @@ func TestSmoke(t *testing.T) {
 }
 
 func TestSmokeFails(t *testing.T) {
-	c, base := smokeWorld(t, "wrong")
-	err := smoke(context.Background(), c, base, &http.Client{}, io.Discard, anyHost)
+	c, base, emu := smokeWorld(t, "wrong")
+	err := smoke(context.Background(), c, base, http.DefaultTransport, io.Discard, emulator(emu))
 	if err == nil || !strings.Contains(err.Error(), "SignatureDoesNotMatch") || strings.Contains(err.Error(), "X-Amz") {
 		t.Fatalf("err = %v", err)
 	}
-	// A redirect elsewhere than R2.
-	c, base = smokeWorld(t, "secret")
-	err = smoke(context.Background(), c, base, &http.Client{}, io.Discard, isR2)
-	if err == nil || !strings.Contains(err.Error(), "isn't to R2") {
+	// A redirect to another host than the group's account's.
+	c, base, _ = smokeWorld(t, "secret")
+	err = smoke(context.Background(), c, base, http.DefaultTransport, io.Discard, r2Endpoint)
+	if err == nil || !strings.Contains(err.Error(), "isn't to smoke-check/absent in bucket bucket-one") {
 		t.Fatalf("err = %v", err)
+	}
+	// A redirect to another object, or one whose Location can't be parsed,
+	// is refused without repeating it.
+	for _, location := range []string{
+		"http://HOST/other-bucket/smoke-check/absent?X-Amz-Signature=SIGNED",
+		"http://HOST/bucket-one/other?X-Amz-Signature=SIGNED",
+		"http://HOST/bucket-one/smoke-check/absent?X-Amz-Signature=SIGNED\x7f%zz",
+		":%zz X-Amz-Signature=SIGNED",
+	} {
+		wrong := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header()["Location"] = []string{strings.ReplaceAll(location, "HOST", r.Host)}
+			w.WriteHeader(http.StatusTemporaryRedirect)
+		}))
+		err := smoke(context.Background(), c, wrong.URL, http.DefaultTransport, io.Discard, emulator(wrong.URL))
+		wrong.Close()
+		if err == nil || strings.Contains(err.Error(), "SIGNED") {
+			t.Errorf("%q: err = %v", location, err)
+		}
 	}
 	// No redirect at all.
 	plain := httptest.NewServer(http.NotFoundHandler())
 	defer plain.Close()
-	if err := smoke(context.Background(), c, plain.URL, &http.Client{}, io.Discard, anyHost); err == nil || !strings.Contains(err.Error(), "not a redirect") {
+	if err := smoke(context.Background(), c, plain.URL, http.DefaultTransport, io.Discard, emulator(plain.URL)); err == nil || !strings.Contains(err.Error(), "not a redirect") {
 		t.Fatalf("err = %v", err)
 	}
-	if err := smoke(context.Background(), c, "ftp://x", &http.Client{}, io.Discard, anyHost); err == nil {
+	if err := smoke(context.Background(), c, "ftp://x", http.DefaultTransport, io.Discard, emulator(plain.URL)); err == nil {
 		t.Fatal("accepted ftp")
-	}
-}
-
-func TestIsR2(t *testing.T) {
-	for s, want := range map[string]bool{
-		"https://0123.r2.cloudflarestorage.com/b/k?X-Amz-Signature=x": true,
-		"http://0123.r2.cloudflarestorage.com/b/k":                    false,
-		"https://r2.cloudflarestorage.com.evil.example/b/k":           false,
-		"https://example.com/b/k":                                     false,
-	} {
-		u, _ := url.Parse(s)
-		if isR2(u) != want {
-			t.Errorf("isR2(%s) = %v", s, !want)
-		}
 	}
 }

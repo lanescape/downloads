@@ -21,7 +21,11 @@ set -euo pipefail
 # main's head, asked again at every attempt, just before anything is
 # applied: a rerun of this job alone keeps the gate's answer from the run's
 # first attempt, and an older commit must never deploy over a newer one.
-head=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+# With curl and jq, which the runner service's machines have, not gh. The
+# token reaches curl as its configuration, on its standard input.
+head=$(printf 'header = "Authorization: Bearer %s"\n' "$GH_TOKEN" |
+  curl -fsS -K - -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/main" |
+  jq -er .sha)
 if [ "$head" != "$GITHUB_SHA" ]; then
   echo "::notice title=Deploy skipped::main has moved on to $head since $GITHUB_SHA; the run for a later push deploys it."
   exit 0

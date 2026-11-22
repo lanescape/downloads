@@ -74,7 +74,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		return err
 	}
 	if *smokeURL != "" {
-		return smoke(ctx, c, *smokeURL, &http.Client{}, stdout, isR2)
+		return smoke(ctx, c, *smokeURL, http.DefaultTransport, stdout, r2Endpoint)
 	}
 
 	var src secrets.Source

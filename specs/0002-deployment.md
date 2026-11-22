@@ -24,13 +24,13 @@ Two Terraform configurations, as `lanescape/runners` has:
 ### The Cloud Run service
 
 - Public: Cloud Run's invoker check is off, since it serves public downloads, and nothing is granted to `allUsers`.
-- No instance while nothing is asked for, and at most two, across every revision, a rollout's old and new together. An instance answers many requests at once, each only a signature, with a 30-second timeout, 1 CPU and 256 MiB, CPU only during requests.
+- No instance while nothing is asked for, and a maximum of two set for the service as a whole, a rollout's old and new revisions together, which Cloud Run can briefly exceed. An instance answers many requests at once, each only a signature, with a 30-second timeout, 1 CPU and 256 MiB, CPU only during requests.
 - Its image is built by `ko` from `cmd/downloads`, on Debian 13 slim, named by digest (`.ko.yaml`), for linux/amd64, and deployed by digest.
 - Its account holds no project role. It may read only its own secrets.
 
 ### Secrets
 
-The secrets are the ones `config/groups.yaml` names, exactly as it names them: CD lists them with `go run ./cmd/downloads -secret-names` and passes them to `infra/`, which makes each in Secret Manager, metadata only, replicated in the region, with deletion protection, lets the service's account read it, and mounts its latest version at `/secrets/<name>/value`. The maintainer adds each value by hand, with `gcloud secrets versions add`; Terraform never holds one, since its state would. The infra identity's grant on secrets is limited to names starting `lanescape-downloads-`. An instance reads the latest versions as it starts, so replacing a token is: add the new access key ID and secret access key, redeploy, which starts a revision whose instances all have the new pair, and revoke the old token once that revision serves and the URLs it signed have expired (infra/README.md).
+The secrets are the ones `config/groups.yaml` names, exactly as it names them: CD lists them with `go run ./cmd/downloads -secret-names` and passes them to `infra/`, which makes each in Secret Manager, metadata only, replicated in the region, with deletion protection, lets the service's account read it, and mounts its latest version at `/secrets/<name>/value`. The maintainer adds each value by hand, with `gcloud secrets versions add`; Terraform never holds one, since its state would. The infra identity's grant on secrets is limited to names starting `lanescape-downloads-`. An instance reads the latest versions as it starts, so replacing a token is: add the new access key ID and secret access key, wait for Secret Manager's eventually consistent `latest` to name them, redeploy, which starts a revision whose instances all have the new pair, and revoke the old token once that revision serves and the URLs it signed have expired (infra/README.md).
 
 Adding a group is a pull request that adds it to `config/groups.yaml`. Once it's deployed, its secrets exist without values, and the service can't start a new revision until the maintainer adds them; the deploy fails there, and is rerun once they're added.
 
@@ -38,7 +38,7 @@ Adding a group is a pull request that adds it to `config/groups.yaml`. Once it's
 
 Workflows run on the runner service, `lanescape-2vcpu-linux-amd64`, through `lanescape/runners/actions/checkout@v1`, or on GitHub's runners for a fork's pull request. They use the latest stable GitHub Actions releases, pinned by commit.
 
-- **CI**, on every pull request: `go vet`, `gofmt`, `go test -race`, actionlint, `infra/check.sh`, and `terraform fmt` and `validate` of both configurations, `infra/` with Infrastructure Manager's newest Terraform, 1.5.7, too.
+- **CI**, on every pull request: `go vet`, `gofmt`, `go test -race`, actionlint, `infra/check.sh`, and `terraform fmt` and `validate` of both configurations, `infra/` with 1.5.7, the Terraform CD has Infrastructure Manager use, too.
 - **CD**, on every push to main: the same checks, then a gate, which skips the deploy unless this is the repository, by ID, the variables below are set and look as they should, and the commit is still main's head. The deploy signs in with GitHub's token through the workload identity pool, which accepts only a push to main by `cd.yml` in this repository, as `lanescape-downloads-deployer`; builds and pushes the image; lists the secrets; asks Infrastructure Manager for a preview of `infra/` at the commit, then applies it, printing both one's logs (`cd/apply.sh`); and, once applied, runs the smoke check.
 - **The smoke check**, `go run ./cmd/downloads -smoke-check <URL>`, asks the deployed service, at its `run.app` URL, for `smoke-check/absent` in every group, and expects a redirect to the provider that the provider answers with `404 NoSuchKey`: the signature and the token's access were accepted, since a wrong signature or a token without access is refused with `403` first. It never prints the redirect's URL.
 
@@ -46,4 +46,4 @@ CD is given, as repository variables, none of them secret: `DOWNLOADS_WORKLOAD_I
 
 ## Merging
 
-Every commit and pull request is attributable to a person. A pull request from a fork can't merge until fork CI exists (`merge-policy.yml`).
+Every commit and pull request is attributable to a person, who has write access to this repository. A fork's pull request runs CI on GitHub's runners but doesn't merge: a maintainer brings the change onto a branch here (`merge-policy.yml`).

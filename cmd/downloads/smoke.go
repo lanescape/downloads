@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lanescape/downloads/config"
+	"github.com/lanescape/downloads/internal/providers/r2"
 )
 
 // smokeKey is an object no group ever has. The provider's answer for it,
@@ -19,31 +20,38 @@ const smokeKey = "smoke-check/absent"
 
 // smoke checks the deployed service at base, as CD does after each deploy
 // (specs/0002-deployment.md, CI and CD): for every group, a GET of an
-// absent object is redirected, and the provider answers the redirect with
-// NoSuchKey. It never prints the redirect's URL, which is signed.
-func smoke(ctx context.Context, c *config.Config, base string, client *http.Client, out io.Writer, isR2 func(*url.URL) bool) error {
+// absent object is redirected to exactly that object in the group's bucket,
+// and the provider answers the redirect with NoSuchKey. endpoint gives a
+// group's provider's scheme and host. Each request is made by itself,
+// without following redirects, so nothing parses or reports a redirect's
+// URL, which is signed.
+func smoke(ctx context.Context, c *config.Config, base string, transport http.RoundTripper, out io.Writer, endpoint func(config.Group) string) error {
 	u, err := url.Parse(base)
 	if err != nil || u.Scheme != "https" && u.Scheme != "http" || u.Host == "" {
 		return fmt.Errorf("smoke check: %q isn't the service's URL", base)
 	}
-	noFollow := *client
-	noFollow.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	for _, g := range c.Groups {
 		target := strings.TrimSuffix(base, "/") + "/" + g.Path + "/" + smokeKey
-		status, location, _, err := get(ctx, &noFollow, target)
+		status, location, _, err := get(ctx, transport, target)
 		if err != nil {
-			return fmt.Errorf("smoke check: %s: %w", g.Path, err)
+			// Not the error itself: an answer that can't be read can quote
+			// its Location, which is signed.
+			return fmt.Errorf("smoke check: %s: couldn't get an answer from the service at %s", g.Path, base)
 		}
 		if status != http.StatusTemporaryRedirect || location == "" {
 			return fmt.Errorf("smoke check: %s: the service answered %d, not a redirect", g.Path, status)
 		}
-		l, err := url.Parse(location)
-		if err != nil || !isR2(l) {
-			return fmt.Errorf("smoke check: %s: the redirect isn't to R2's S3 API", g.Path)
-		}
-		status, _, body, err := get(ctx, &noFollow, location)
+		want, err := url.Parse(endpoint(g))
 		if err != nil {
-			// The client's error can hold the URL; say only what failed.
+			return fmt.Errorf("smoke check: %s: the provider's endpoint", g.Path)
+		}
+		l, err := url.Parse(location)
+		if err != nil || l.Scheme != want.Scheme || l.Host != want.Host || l.Path != "/"+g.R2.Bucket+"/"+smokeKey {
+			return fmt.Errorf("smoke check: %s: the redirect isn't to %s in bucket %s", g.Path, smokeKey, g.R2.Bucket)
+		}
+		status, _, body, err := get(ctx, transport, location)
+		if err != nil {
+			// The error would hold the signed URL; say only what failed.
 			return fmt.Errorf("smoke check: %s: couldn't fetch the redirect's URL", g.Path)
 		}
 		if status != http.StatusNotFound || !strings.Contains(body, "<Code>NoSuchKey</Code>") {
@@ -54,19 +62,20 @@ func smoke(ctx context.Context, c *config.Config, base string, client *http.Clie
 	return nil
 }
 
-// isR2 is whether a URL is R2's S3 API's.
-func isR2(u *url.URL) bool {
-	return u.Scheme == "https" && strings.HasSuffix(u.Host, ".r2.cloudflarestorage.com")
+// r2Endpoint is a group's R2 account's S3 API.
+func r2Endpoint(g config.Group) string {
+	return r2.Endpoint(g.R2.AccountID)
 }
 
-func get(ctx context.Context, client *http.Client, target string) (int, string, string, error) {
+// get makes one request, following nothing.
+func get(ctx context.Context, transport http.RoundTripper, target string) (int, string, string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		return 0, "", "", err
 	}
-	resp, err := client.Do(req)
+	resp, err := transport.RoundTrip(req)
 	if err != nil {
 		return 0, "", "", err
 	}

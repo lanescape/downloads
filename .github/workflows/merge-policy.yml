@@ -22,7 +22,7 @@ jobs:
           AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           # Every change is attributable to a person, who is responsible for it, agents' work included: someone with
-          # write access to this repository. A fork's author has none, so its change merges from a branch here.
+          # write access to this repository. A fork's change merges from a branch here, which a maintainer brings it onto.
           if [ "$HEAD_REPOSITORY" != "$REPOSITORY" ]; then
             echo "::error::PRs from forks don't merge. A maintainer can take the change over on a branch here."
             exit 1
