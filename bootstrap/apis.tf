@@ -1,6 +1,7 @@
 locals {
   apis = [
     "artifactregistry.googleapis.com",
+    "cloudbuild.googleapis.com", # Infrastructure Manager runs Terraform in Cloud Build
     "cloudresourcemanager.googleapis.com",
     "config.googleapis.com", # Infrastructure Manager
     "iam.googleapis.com",

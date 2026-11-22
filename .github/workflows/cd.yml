@@ -19,14 +19,16 @@ on:
 permissions:
   contents: read
 
-# One run at a time; a running one is never cancelled. A newer push's run
-# replaces one still waiting, which would have skipped its deploy anyway: a
-# run's deploy goes ahead only if its commit is still main's head when its
-# turn comes (the gate below), so an older commit never deploys over a
-# newer one, and main's head always has a run of its own to deploy it.
+# One run at a time, each in its turn, in the order they began to wait,
+# and none cancelled, waiting or running, so a rerun of an older run never
+# displaces main's head's. A run's deploy goes ahead only if its commit is
+# still main's head when its turn comes (the gate below), so an older
+# commit never deploys over a newer one, and main's head always has a run
+# of its own to deploy it.
 concurrency:
   group: cd
   cancel-in-progress: false
+  queue: max
 
 jobs:
   checks:
@@ -120,7 +122,7 @@ jobs:
       - uses: lanescape/runners/actions/checkout@v1
       # No cache: what's deployed is built from the commit and the module
       # proxy alone.
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
           cache: false

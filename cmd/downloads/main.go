@@ -108,7 +108,10 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout 
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       2 * time.Minute,
 		MaxHeaderBytes:    16 << 10,
-		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
+		// OPTIONS * reaches the handler, which refuses it, rather than
+		// net/http answering it.
+		DisableGeneralOptionsHandler: true,
+		ErrorLog:                     slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()

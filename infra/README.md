@@ -35,7 +35,9 @@ read -rs value && printf '%s' "$value" | gcloud secrets versions add lanescape-d
 unset value
 ```
 
-Then rerun the failed CD run's deploy. A new version takes effect as instances start; to replace a token, add the new one's values, let the instances restart (a deploy does it), then revoke the old token in Cloudflare.
+Then rerun the failed CD run's deploy. An instance reads the secrets' latest versions as it starts.
+
+To replace a token, make the new one in Cloudflare, add both of its values as above, then rerun the latest CD run's deploy, which starts a new revision whose every instance has the new pair. An instance that started between the two `versions add` may hold one value of each token until then, and its redirects fail. Revoke the old token only once the new revision serves and the URLs signed with the old one have expired, `url_lifetime` after it.
 
 ## What the service is given
 

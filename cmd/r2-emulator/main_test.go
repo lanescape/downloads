@@ -31,9 +31,11 @@ func TestBuild(t *testing.T) {
 			t.Errorf("build(%v, %v) succeeded", bad[0], bad[1])
 		}
 	}
-	// A refused token names its ID, never its secret.
-	_, err = build([]string{"id:the-secret:write:a"}, nil)
-	if err == nil || strings.Contains(err.Error(), "the-secret") {
-		t.Errorf("err = %v", err)
+	// A refused token is named by its position, never by its ID or secret.
+	for _, bad := range []string{"the-id:the-secret:write:a", "the-id-and-the-secret", "the-id:the-secret"} {
+		_, err = build([]string{"ok:ok:read:a", bad}, nil)
+		if err == nil || !strings.Contains(err.Error(), "-token 2") || strings.Contains(err.Error(), "the-secret") || strings.Contains(err.Error(), "the-id") {
+			t.Errorf("err = %v", err)
+		}
 	}
 }

@@ -24,13 +24,13 @@ Two Terraform configurations, as `lanescape/runners` has:
 ### The Cloud Run service
 
 - Public: Cloud Run's invoker check is off, since it serves public downloads, and nothing is granted to `allUsers`.
-- No instance while nothing is asked for, and at most two. An instance answers many requests at once, each only a signature, with a 30-second timeout, 1 CPU and 256 MiB, CPU only during requests.
+- No instance while nothing is asked for, and at most two, across every revision, a rollout's old and new together. An instance answers many requests at once, each only a signature, with a 30-second timeout, 1 CPU and 256 MiB, CPU only during requests.
 - Its image is built by `ko` from `cmd/downloads`, on Debian 13 slim, named by digest (`.ko.yaml`), for linux/amd64, and deployed by digest.
 - Its account holds no project role. It may read only its own secrets.
 
 ### Secrets
 
-The secrets are the ones `config/groups.yaml` names, exactly as it names them: CD lists them with `go run ./cmd/downloads -secret-names` and passes them to `infra/`, which makes each in Secret Manager, metadata only, replicated in the region, with deletion protection, lets the service's account read it, and mounts its latest version at `/secrets/<name>/value`. The maintainer adds each value by hand, with `gcloud secrets versions add`; Terraform never holds one, since its state would. The infra identity's grant on secrets is limited to names starting `lanescape-downloads-`. A new version takes effect as instances start.
+The secrets are the ones `config/groups.yaml` names, exactly as it names them: CD lists them with `go run ./cmd/downloads -secret-names` and passes them to `infra/`, which makes each in Secret Manager, metadata only, replicated in the region, with deletion protection, lets the service's account read it, and mounts its latest version at `/secrets/<name>/value`. The maintainer adds each value by hand, with `gcloud secrets versions add`; Terraform never holds one, since its state would. The infra identity's grant on secrets is limited to names starting `lanescape-downloads-`. An instance reads the latest versions as it starts, so replacing a token is: add the new access key ID and secret access key, redeploy, which starts a revision whose instances all have the new pair, and revoke the old token once that revision serves and the URLs it signed have expired (infra/README.md).
 
 Adding a group is a pull request that adds it to `config/groups.yaml`. Once it's deployed, its secrets exist without values, and the service can't start a new revision until the maintainer adds them; the deploy fails there, and is rerun once they're added.
 

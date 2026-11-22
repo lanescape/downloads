@@ -94,6 +94,20 @@ func TestServes(t *testing.T) {
 	if resp.StatusCode != http.StatusTemporaryRedirect || !strings.HasPrefix(loc, "https://") || !strings.Contains(loc, ".r2.cloudflarestorage.com/lanescape-browser/v1/latest?") {
 		t.Fatalf("%d %q", resp.StatusCode, loc)
 	}
+	// OPTIONS *, which net/http would answer itself, is refused as any
+	// method but GET and HEAD is.
+	conn, err := net.Dial("tcp", addr.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.Write([]byte("OPTIONS * HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	head, _ := io.ReadAll(conn)
+	if !strings.HasPrefix(string(head), "HTTP/1.1 405") || !strings.Contains(string(head), "Allow: GET, HEAD") || !strings.Contains(string(head), "Cache-Control: no-store") {
+		t.Fatalf("OPTIONS *: %q", head)
+	}
 	cancel()
 	select {
 	case err := <-errc:

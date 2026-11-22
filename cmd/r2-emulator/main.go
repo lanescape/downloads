@@ -51,10 +51,11 @@ func main() {
 
 func build(tokens, objects []string) (*r2emu.Emulator, error) {
 	e := r2emu.New()
-	for _, t := range tokens {
+	// Errors name a -token by its position, never by anything in it.
+	for i, t := range tokens {
 		parts := strings.SplitN(t, ":", 4)
 		if len(parts) != 4 || parts[0] == "" || parts[1] == "" || parts[3] == "" {
-			return nil, fmt.Errorf("-token %q: want <access key ID>:<secret access key>:<read|readwrite>:<buckets>", parts[0])
+			return nil, fmt.Errorf("-token %d: want <access key ID>:<secret access key>:<read|readwrite>:<buckets>", i+1)
 		}
 		var access r2emu.Access
 		switch parts[2] {
@@ -63,7 +64,7 @@ func build(tokens, objects []string) (*r2emu.Emulator, error) {
 		case "readwrite":
 			access = r2emu.ReadWrite
 		default:
-			return nil, fmt.Errorf("-token %s: access %q isn't read or readwrite", parts[0], parts[2])
+			return nil, fmt.Errorf("-token %d: the access isn't read or readwrite", i+1)
 		}
 		buckets := strings.Split(parts[3], ",")
 		for _, b := range buckets {

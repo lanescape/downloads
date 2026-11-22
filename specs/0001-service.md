@@ -12,7 +12,7 @@ A download's address is `https://downloads.lanescape.dev/<group>/<key>`, such as
 
 - `GET` or `HEAD` of `/<group>/<key>` is answered `307 Temporary Redirect`, with `Location` a URL of the object at the group's provider that is good for the configuration's `url_lifetime`, signed for that method alone. The client follows it to the provider, which answers as it does for any object: the object, or `404` if there's none.
 - The key's segments are letters, digits, `.`, `_` and `-`, and none is `.` or `..`. Anything escaped in the path, and an empty segment, is refused. The query is ignored.
-- Every other method is `405`, with `Allow: GET, HEAD`. A path in no group, or a key that isn't allowed, is `404`.
+- Every other method is `405`, with `Allow: GET, HEAD`, `OPTIONS *` too. A path in no group, or a key that isn't allowed, is `404`.
 - Every answer is `Cache-Control: no-store`: a path such as `v1/latest` changes, and a redirect is only as good as its URL's signature.
 - The service doesn't check that the object exists, which would cost a request to the provider for every download; the provider says so itself.
 
@@ -57,4 +57,4 @@ At startup the service reads the value of every secret the configuration names, 
 
 ## Emulators
 
-Tests use only this repository's emulators. `emulators/r2` emulates what the service and its tests use of R2's S3 API: path-style `GET`, `HEAD` and `PUT` of objects, signed in a header or a presigned URL, verified by its own implementation of Signature Version 4, which its tests hold to AWS's published examples, rather than by the signer the service uses. Like R2, it refuses a wrong or expired signature, gives each token read or read and write access to its own buckets, evaluates `If-Match` and `If-None-Match` on a write atomically, answering `412 PreconditionFailed`, and gives back an object's quoted ETag, `Content-Type`, `Cache-Control` and `x-amz-meta-*`. `cmd/r2-emulator` serves it for a local run, with `DOWNLOADS_R2_ENDPOINT` pointing the service at it.
+Tests use only this repository's emulators. `emulators/r2` emulates what the service and its tests use of R2's S3 API: path-style `GET`, `HEAD` and `PUT` of objects, signed in a header or a presigned URL, verified by its own implementation of Signature Version 4, which its tests hold to AWS's published examples, rather than by the signer the service uses. Like R2, it refuses a wrong or expired signature, and a header-signed request with an `x-amz-` header it didn't sign, gives each token read or read and write access to its own buckets, evaluates `If-Match`, compared strongly, and `If-None-Match`, compared weakly, on a write atomically, answering `412 PreconditionFailed`, and gives back an object's quoted ETag, `Content-Type`, `Cache-Control` and `x-amz-meta-*`. `cmd/r2-emulator` serves it for a local run, with `DOWNLOADS_R2_ENDPOINT` pointing the service at it.

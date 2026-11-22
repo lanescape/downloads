@@ -20,6 +20,14 @@ resource "google_cloud_run_v2_service" "service" {
   deletion_protection  = true
   labels               = local.labels
 
+  # None while nothing's asked for, and at most two across every revision,
+  # a rollout's old and new together. Each instance answers many requests
+  # at once, since each is only a signature.
+  scaling {
+    min_instance_count = 0
+    max_instance_count = 2
+  }
+
   template {
     service_account = local.service_account
 
@@ -31,8 +39,7 @@ resource "google_cloud_run_v2_service" "service" {
     # A request is answered at once, from memory.
     timeout = "30s"
 
-    # None while nothing's asked for, and at most two: each instance
-    # answers many requests at once, since each is only a signature.
+    # And at most two of this revision's own.
     scaling {
       min_instance_count = 0
       max_instance_count = 2

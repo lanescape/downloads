@@ -247,27 +247,36 @@ func (e *Emulator) put(w http.ResponseWriter, r *http.Request, s *signed, bucket
 }
 
 // preconditions are R2's for a write: If-Match holds when the object exists
-// and its ETag is one listed, or * is; If-None-Match holds when it doesn't
-// exist, or its ETag is none listed and * isn't.
+// and its ETag is one listed, or * is, compared strongly; If-None-Match
+// holds when it doesn't exist, or its ETag is none listed and * isn't,
+// compared weakly.
 func preconditions(h http.Header, o *Object) bool {
 	if v := h.Get("If-Match"); v != "" {
-		if o == nil || !matches(v, o.ETag) {
+		if o == nil || !matches(v, o.ETag, false) {
 			return false
 		}
 	}
 	if v := h.Get("If-None-Match"); v != "" {
-		if o != nil && matches(v, o.ETag) {
+		if o != nil && matches(v, o.ETag, true) {
 			return false
 		}
 	}
 	return true
 }
 
-func matches(list, etag string) bool {
+// matches is whether a list of ETags has etag, or *. Strongly, a weak ETag
+// never matches; weakly, W/ is ignored on either side.
+func matches(list, etag string, weak bool) bool {
 	for v := range strings.SplitSeq(list, ",") {
 		v = strings.TrimSpace(v)
-		// Strong comparison: a weak ETag never matches.
-		if v == "*" || v == etag {
+		if v == "*" {
+			return true
+		}
+		if weak {
+			if strings.TrimPrefix(v, "W/") == strings.TrimPrefix(etag, "W/") {
+				return true
+			}
+		} else if v == etag {
 			return true
 		}
 	}

@@ -21,10 +21,10 @@ jobs:
           HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
           AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
-          # Every change is attributable to a person, who is responsible for it, agents' work included. A PR from a
-          # fork can't merge until fork CI exists: its builds are skipped, and skipped checks count as passed.
+          # Every change is attributable to a person, who is responsible for it, agents' work included: someone with
+          # write access to this repository. A fork's author has none, so its change merges from a branch here.
           if [ "$HEAD_REPOSITORY" != "$REPOSITORY" ]; then
-            echo "::error::PRs from forks can't merge yet. A maintainer can take the change over on a branch here."
+            echo "::error::PRs from forks don't merge. A maintainer can take the change over on a branch here."
             exit 1
           fi
           permission="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \

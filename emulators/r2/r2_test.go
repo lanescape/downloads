@@ -142,6 +142,11 @@ func TestConditionalWrites(t *testing.T) {
 	status(t, rw.do("PUT", "/one/latest", []byte("4\n"), map[string]string{"If-Match": "*"}), 200)
 	// A weak ETag never matches.
 	status(t, rw.do("PUT", "/one/latest", []byte("5\n"), map[string]string{"If-Match": "W/" + second.Header.Get("ETag")}), 412)
+	// If-None-Match compares weakly: the current ETag, weak or not, fails it.
+	current := rw.do("HEAD", "/one/latest", nil, nil).Header.Get("ETag")
+	status(t, rw.do("PUT", "/one/latest", []byte("7\n"), map[string]string{"If-None-Match": "W/" + current}), 412)
+	status(t, rw.do("PUT", "/one/latest", []byte("7\n"), map[string]string{"If-None-Match": current}), 412)
+	status(t, rw.do("PUT", "/one/latest", []byte("7\n"), map[string]string{"If-None-Match": `"other"`}), 200)
 	// Unconditional writes overwrite.
 	status(t, rw.do("PUT", "/one/latest", []byte("6\n"), nil), 200)
 }
@@ -172,6 +177,17 @@ func TestRefusals(t *testing.T) {
 		t.Fatal(err)
 	}
 	status(t, resp, 400)
+	// Metadata that wasn't signed.
+	r, _ = http.NewRequest("PUT", base+"/one/x", bytes.NewReader([]byte("x")))
+	hash = sha256Hex([]byte("x"))
+	r.Header.Set("X-Amz-Content-Sha256", hash)
+	_ = v4.NewSigner().SignHTTP(context.Background(), aws.Credentials{AccessKeyID: "rw", SecretAccessKey: "rw-secret"}, r, hash, "s3", "auto", t0)
+	r.Header.Set("X-Amz-Meta-Sha256", "unsigned")
+	resp, err = http.DefaultClient.Do(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status(t, resp, 403)
 	// Not emulated.
 	status(t, rw.do("DELETE", "/one/x", nil, nil), 501)
 	status(t, rw.do("GET", "/one", nil, nil), 501)

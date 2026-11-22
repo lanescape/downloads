@@ -146,6 +146,17 @@ func (s *signed) verify(r *http.Request, secret string, now time.Time) *authErro
 	if !contains(s.signedHeaders, "host") {
 		return refuse(http.StatusBadRequest, "AuthorizationHeaderMalformed", "host must be signed")
 	}
+	// A header-signed request signs every x-amz- header it sends, such as
+	// the metadata a write stores, but x-amz-content-sha256, which S3
+	// checks against the body anyway.
+	if !s.presigned {
+		for name := range r.Header {
+			lower := strings.ToLower(name)
+			if strings.HasPrefix(lower, "x-amz-") && lower != "x-amz-content-sha256" && !contains(s.signedHeaders, lower) {
+				return refuse(http.StatusForbidden, "AccessDenied", "There were headers present in the request which were not signed")
+			}
+		}
+	}
 	want := signature(secret, s.date, s.scope, canonicalRequest(r, s))
 	if !hmac.Equal([]byte(want), []byte(s.signature)) {
 		return refuse(http.StatusForbidden, "SignatureDoesNotMatch", "the request signature we calculated does not match the signature you provided")
