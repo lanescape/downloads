@@ -1,0 +1,22 @@
+# The groups the service serves, and each group's provider
+# (specs/0001-service.md, Configuration). A request for
+# https://downloads.lanescape.dev/<group>/<key> is redirected to <key> at the
+# group's provider.
+#
+# Nothing here is secret. A provider's credentials are referred to only by
+# the name of the Secret Manager secret that holds each, in the fields ending
+# in _secret_name; their values are added to Secret Manager by hand
+# (infra/README.md). Name each secret in full, following
+# lanescape-downloads-<group, with / as ->-<provider>-<field>.
+
+# How long a presigned URL lasts: long enough to download a package over a
+# slow connection, since a request already in flight when it expires goes on.
+url_lifetime: 1h
+
+groups:
+  lanescape/browser:
+    r2:
+      account_id: 6d39a82297745b856f8c09e7e0b91b3a
+      bucket: lanescape-browser
+      access_key_id_secret_name: lanescape-downloads-lanescape-browser-r2-access-key-id
+      secret_access_key_secret_name: lanescape-downloads-lanescape-browser-r2-secret-access-key

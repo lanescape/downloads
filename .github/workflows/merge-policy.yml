@@ -1,0 +1,35 @@
+name: Merge policy
+# Runs main's copy of this file, never a PR's, and reads only the PR's metadata: no PR code is checked out or run.
+# A required check on main, so a PR merges only if it passes.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  merge-policy:
+    name: Author answers for this PR
+    runs-on: lanescape-2vcpu-linux-amd64
+    timeout-minutes: 5
+    steps:
+      - name: The author answers for it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          # Every change is attributable to a person, who is responsible for it, agents' work included. A PR from a
+          # fork can't merge until fork CI exists: its builds are skipped, and skipped checks count as passed.
+          if [ "$HEAD_REPOSITORY" != "$REPOSITORY" ]; then
+            echo "::error::PRs from forks can't merge yet. A maintainer can take the change over on a branch here."
+            exit 1
+          fi
+          permission="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$REPOSITORY/collaborators/$AUTHOR/permission" | jq -r .permission)"
+          case "$permission" in
+            admin|maintain|write) echo "$AUTHOR has $permission access, and answers for this PR." ;;
+            *) echo "::error::$AUTHOR can't be responsible for merging to this repo ($permission access)."; exit 1 ;;
+          esac
