@@ -27,8 +27,7 @@ jobs:
             echo "::error::PRs from forks don't merge. A maintainer can take the change over on a branch here."
             exit 1
           fi
-          permission="$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
-            "https://api.github.com/repos/$REPOSITORY/collaborators/$AUTHOR/permission" | jq -r .permission)"
+          permission="$(gh api "repos/$REPOSITORY/collaborators/$AUTHOR/permission" --jq .permission)"
           case "$permission" in
             admin|maintain|write) echo "$AUTHOR has $permission access, and answers for this PR." ;;
             *) echo "::error::$AUTHOR can't be responsible for merging to this repo ($permission access)."; exit 1 ;;
