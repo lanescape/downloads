@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strconv"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -66,22 +66,22 @@ case "$*" in
 esac
 `
 
-// bash is a Bash of at least 4.4, which the script needs, as Ubuntu's is.
+// bash is a Bash of at least 4.4, which the script needs, since it expands
+// arrays that may be empty under set -u. On Linux it's /bin/bash, Debian
+// 13's and Ubuntu 26.04's, 5.2 or later. A Mac's own is 3.2, so on a Mac
+// it's Homebrew's, and the tests skip without it (specs/0002-deployment.md,
+// Supported systems).
 func bash(t *testing.T) string {
 	t.Helper()
-	for _, p := range []string{"/opt/homebrew/bin/bash", "/usr/local/bin/bash", "/bin/bash", "/usr/bin/bash"} {
-		out, err := exec.Command(p, "-c", `echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]}"`).Output()
-		if err != nil {
-			continue
-		}
-		f := strings.Fields(string(out))
-		major, _ := strconv.Atoi(f[0])
-		minor, _ := strconv.Atoi(f[1])
-		if major > 4 || major == 4 && minor >= 4 {
+	if runtime.GOOS != "darwin" {
+		return "/bin/bash"
+	}
+	for _, p := range []string{"/opt/homebrew/bin/bash", "/usr/local/bin/bash"} {
+		if _, err := os.Stat(p); err == nil {
 			return p
 		}
 	}
-	t.Skip("no Bash 4.4 or later")
+	t.Skip("no Homebrew Bash: a Mac's own Bash, 3.2, is older than apply.sh needs")
 	return ""
 }
 
@@ -97,9 +97,11 @@ type result struct {
 func apply(t *testing.T, env ...string) result {
 	t.Helper()
 	sh := bash(t)
-	jq, err := exec.LookPath("jq")
-	if err != nil {
-		t.Skip("no jq")
+	// Every supported system has jq at /usr/bin/jq, which the script finds
+	// on its PATH: the runner service's image, GitHub's Ubuntu 26.04 and
+	// macOS.
+	if _, err := os.Stat("/usr/bin/jq"); err != nil {
+		t.Fatalf("no jq: %v", err)
 	}
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "bin")
@@ -110,9 +112,6 @@ func apply(t *testing.T, env ...string) result {
 		if err := os.WriteFile(filepath.Join(bin, name), []byte(body), 0o755); err != nil {
 			t.Fatal(err)
 		}
-	}
-	if err := os.Symlink(jq, filepath.Join(bin, "jq")); err != nil {
-		t.Fatal(err)
 	}
 	calls, summary, output := filepath.Join(dir, "calls"), filepath.Join(dir, "summary"), filepath.Join(dir, "output")
 	cmd := exec.Command(sh, "apply.sh")

@@ -19,7 +19,16 @@ gofmt -l .
 go test -race ./...
 ```
 
-Tests need nothing but Go, at the version `go.mod` names, and run against this repository's own emulators.
+Tests need Go, at the version `go.mod` names, and run against this repository's own emulators. `go test -race` needs cgo, and so a C compiler: the runner service's image and GitHub's Ubuntu 26.04 have one, and on a Mac it's Xcode's command line tools. The tests of `cd/apply.sh` also run Bash 4.4 or later and jq: every supported system has jq at `/usr/bin/jq`, and Linux's `/bin/bash` is new enough, but a Mac's own is 3.2, so on a Mac they use Homebrew's, at `/opt/homebrew/bin/bash` or `/usr/local/bin/bash`, and skip without it.
+
+## Supported systems
+
+The code is built and tested on these systems, and nothing in the repository works around an older one (specs/0002-deployment.md, Supported systems):
+
+- **Linux**, where CI and CD run: Debian 13 (trixie), with Linux 6.12 LTS, on the runner service's machines, which run this repository's own CI and CD and the merge policy, and Ubuntu 26.04 on GitHub's runners, which run a fork's pull request's CI, and CD's checks and gate in a fork, where the gate skips the deploy.
+- **macOS 26.2** or later, for building and testing on a Mac, matching the macOS SDK the organization pins, `MacOSX26.2.sdk` from Xcode 26.3. No workflow runs on macOS.
+
+These are where the code is built, not where the service runs, which is its image, on Debian 13 slim, on Cloud Run.
 
 ## Running it locally
 
